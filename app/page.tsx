@@ -1,6 +1,5 @@
 "use client";
-
-// egame-footbal-v.01_11_25_25_1539
+// egame-footbal-v.01.01_11_25_25_1641_local_instance_fix
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -55,7 +54,7 @@ const stepDefenderTowardPlayer = (def: Position, player: Position): Position => 
 
   const options: Position[] = [];
 
-  // Prefer to move toward the player, but we can randomize between vertical/horizontal
+  // Prefer to move toward the player, but randomize between vertical/horizontal
   if (colDir !== 0) {
     options.push({ row: def.row, col: clamp(def.col + colDir, 0, COLS - 1) });
   }
@@ -91,12 +90,16 @@ const pageStyle =
   "min-h-screen flex items-center justify-center bg-slate-900 text-slate-100";
 
 const Page: React.FC = () => {
-  const [player, setPlayer] = useState<Position>({ row: 2, col: 0 });
-  const [defenders, setDefenders] = useState<Position[]>(() =>
-    generateDefenders({ row: 2, col: 0 })
-  );
+  const [player, setPlayer] = useState<Position>(() => ({ row: 2, col: 0 }));
+  const [defenders, setDefenders] = useState<Position[]>([]); // start empty for deterministic SSR
   const [status, setStatus] = useState<GameStatus>("PLAYING");
   const [tick, setTick] = useState(0);
+
+  // After mount (client side), generate defenders so SSR/CSR markup matches
+  useEffect(() => {
+    const start: Position = { row: 2, col: 0 };
+    setDefenders(generateDefenders(start));
+  }, []);
 
   const resetGame = useCallback(() => {
     const start: Position = { row: 2, col: 0 };
@@ -231,7 +234,10 @@ const Page: React.FC = () => {
                 }
 
                 return (
-                  <div key={cIdx} className={`${baseClasses} ${cellClasses}`}>
+                  <div
+                    key={cIdx}
+                    className={`${baseClasses} ${cellClasses}`}
+                  >
                     {cell === "PLAYER" ? "O" : cell === "DEFENDER" ? "X" : ""}
                   </div>
                 );
