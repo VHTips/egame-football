@@ -131,7 +131,7 @@ const pageStyle =
   "min-h-screen flex items-center justify-center bg-slate-900 text-slate-100";
 
 // Start position: row 3, col 1 (0-based)
-const PLAYER_START: Position = { row: 3, col: 1 };
+const PLAYER_START: Position = { row: 2, col: 1 };
 
 const Page: React.FC = () => {
   const [player, setPlayer] = useState<Position>(() => PLAYER_START);
