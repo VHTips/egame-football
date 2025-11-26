@@ -1,5 +1,5 @@
 "use client";
-// egame-football-v.04_11_25_25_2328_move-sound
+// egame-football-v.05_11_25_25_2353_touchdown-sound
 
 import React, {
   useCallback,
@@ -145,8 +145,9 @@ const Page: React.FC = () => {
   const statusRef = useRef<GameStatus>("PLAYING");
   const defendersTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // Move sound ref
+  // Sound refs
   const moveSoundRef = useRef<HTMLAudioElement | null>(null);
+  const touchdownSoundRef = useRef<HTMLAudioElement | null>(null);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -157,11 +158,13 @@ const Page: React.FC = () => {
     statusRef.current = status;
   }, [status]);
 
-  // Initialize move sound on client
+  // Initialize sounds on client
   useEffect(() => {
     moveSoundRef.current = new Audio("/sounds/move.wav");
-      // set volume here
-    moveSoundRef.current.volume = 0.15; // example: 25%
+    touchdownSoundRef.current = new Audio("/sounds/touchdown.wav");
+    if (touchdownSoundRef.current) {
+      touchdownSoundRef.current.volume = 1.0; // full volume as requested
+    }
   }, []);
 
   const clearDefenderTimeouts = useCallback(() => {
@@ -281,6 +284,16 @@ const Page: React.FC = () => {
         if (next.col === COLS - 1) {
           setStatus("TOUCHDOWN");
           statusRef.current = "TOUCHDOWN";
+
+          // Play touchdown sound immediately
+          if (touchdownSoundRef.current) {
+            try {
+              touchdownSoundRef.current.currentTime = 0;
+              void touchdownSoundRef.current.play();
+            } catch {
+              // ignore play errors
+            }
+          }
         }
 
         // Collision with defender?
