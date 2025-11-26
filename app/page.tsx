@@ -1,5 +1,5 @@
 "use client";
-// egame-football-v.05_11_25_25_2353_touchdown-sound
+// egame-football_11_26_25_1312_tackle-sound
 
 import React, {
   useCallback,
@@ -31,116 +31,139 @@ const positionsEqual = (a: Position, b: Position) =>
 const randomInt = (min: number, max: number) =>
   Math.floor(Math.random() * (max - min + 1)) + min;
 
-// Generate defenders away from the player and from each other
+// Generate defenders in random, non-overlapping positions
+// making sure they don't spawn on the player.
 const generateDefenders = (player: Position): Position[] => {
   const defenders: Position[] = [];
 
   while (defenders.length < NUM_DEFENDERS) {
-    const pos: Position = {
-      row: randomInt(0, ROWS - 1),
-      col: randomInt(3, COLS - 1), // keep them away from the very left edge
-    };
+    // Keep defenders away from the first two columns so the player
+    // has a little space.
+    const row = randomInt(0, ROWS - 1);
+    const col = randomInt(3, COLS - 1);
 
-    const collidesPlayer = positionsEqual(pos, player);
-    const collidesOther = defenders.some((d) => positionsEqual(d, pos));
+    const candidate = { row, col };
 
-    if (!collidesPlayer && !collidesOther) {
-      defenders.push(pos);
+    // Avoid collisions with player or existing defenders
+    const collidesWithPlayer = positionsEqual(candidate, player);
+    const collidesWithDefender = defenders.some((d) =>
+      positionsEqual(d, candidate)
+    );
+
+    if (!collidesWithPlayer && !collidesWithDefender) {
+      defenders.push(candidate);
     }
   }
 
   return defenders;
 };
 
-const clamp = (val: number, min: number, max: number) =>
-  Math.max(min, Math.min(max, val));
+// Random delay helper (each defender gets its own timing)
+const randomDefenderDelayMs = () =>
+  (Math.random() < 0.5 ? 1000 : 1500) + randomInt(-100, 100);
 
-// Defenders move on independent random delays (1 or 1.5 seconds)
-function randomDefenderDelayMs(): number {
-  return Math.random() < 0.5 ? 1000 : 1500;
-}
+// Simple movement helpers for defenders
+const clamp = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value));
 
-// Compute the next position for a given defender, chasing the player
-function getNextDefenderPosition(
-  current: Position,
-  playerPos: Position,
-  allDefenders: Position[],
+// Checks if a defender can move into the target cell
+// (no overlapping other defenders; the player is allowed).
+const canMoveIntoCell = (
+  target: Position,
+  defenders: Position[],
+  selfIndex: number
+) => {
+  return !defenders.some(
+    (d, idx) => idx !== selfIndex && positionsEqual(d, target)
+  );
+};
+
+const getNextDefenderPosition = (
+  defender: Position,
+  player: Position,
+  defenders: Position[],
   index: number
-): Position {
-  const rowDiff = playerPos.row - current.row;
-  const colDiff = playerPos.col - current.col;
-
-  const verticalDir = rowDiff === 0 ? 0 : rowDiff > 0 ? 1 : -1;
-  const horizontalDir = colDiff === 0 ? 0 : colDiff > 0 ? 1 : -1;
+): Position => {
+  // 80% of the time: move toward the player
+  // 20%: random cardinal step for some jitter
+  const chaseBias = Math.random();
+  const current = defender;
 
   const candidates: Position[] = [];
 
-  const moveTowardPlayerFirst = Math.random() < 0.8; // 80% bias toward chasing
+  if (chaseBias < 0.8) {
+    // Move toward the player (vertical or horizontal)
+    const rowDiff = player.row - current.row;
+    const colDiff = player.col - current.col;
 
-  if (moveTowardPlayerFirst) {
-    // Prefer axis with larger distance
-    if (Math.abs(rowDiff) > Math.abs(colDiff)) {
+    const verticalDir = rowDiff === 0 ? 0 : rowDiff > 0 ? 1 : -1;
+    const horizontalDir = colDiff === 0 ? 0 : colDiff > 0 ? 1 : -1;
+
+    // Try vertical move first if row difference is larger
+    if (Math.abs(rowDiff) >= Math.abs(colDiff)) {
       if (verticalDir !== 0) {
-        candidates.push({ row: current.row + verticalDir, col: current.col });
+        candidates.push({
+          row: clamp(current.row + verticalDir, 0, ROWS - 1),
+          col: current.col,
+        });
       }
       if (horizontalDir !== 0) {
-        candidates.push({ row: current.row, col: current.col + horizontalDir });
+        candidates.push({
+          row: current.row,
+          col: clamp(current.col + horizontalDir, 0, COLS - 1),
+        });
       }
     } else {
       if (horizontalDir !== 0) {
-        candidates.push({ row: current.row, col: current.col + horizontalDir });
+        candidates.push({
+          row: current.row,
+          col: clamp(current.col + horizontalDir, 0, COLS - 1),
+        });
       }
       if (verticalDir !== 0) {
-        candidates.push({ row: current.row + verticalDir, col: current.col });
+        candidates.push({
+          row: clamp(current.row + verticalDir, 0, ROWS - 1),
+          col: current.col,
+        });
       }
     }
   } else {
-    // Jitter: random cardinal direction
-    const dirs = [
-      { dr: -1, dc: 0 },
-      { dr: 1, dc: 0 },
-      { dr: 0, dc: -1 },
-      { dr: 0, dc: 1 },
+    // Random cardinal step (up, down, left, right)
+    const directions: Position[] = [
+      { row: current.row - 1, col: current.col },
+      { row: current.row + 1, col: current.col },
+      { row: current.row, col: current.col - 1 },
+      { row: current.row, col: current.col + 1 },
     ];
-    const dir = dirs[randomInt(0, dirs.length - 1)];
-    candidates.push({ row: current.row + dir.dr, col: current.col + dir.dc });
-  }
 
-  // Fallback: stay in place if nothing else works
-  candidates.push(current);
-
-  // Helper to check if another defender already occupies a cell
-  const isOccupiedByDefender = (row: number, col: number): boolean =>
-    allDefenders.some((d, i) => i !== index && d.row === row && d.col === col);
-
-  // Pick the first valid candidate
-  for (const cand of candidates) {
-    if (
-      cand.row >= 0 &&
-      cand.row < ROWS &&
-      cand.col >= 0 &&
-      cand.col < COLS &&
-      !isOccupiedByDefender(cand.row, cand.col)
-    ) {
-      return cand;
+    for (const dir of directions) {
+      candidates.push({
+        row: clamp(dir.row, 0, ROWS - 1),
+        col: clamp(dir.col, 0, COLS - 1),
+      });
     }
   }
 
-  return current;
-}
+  // Filter out candidates that are invalid (overlap defenders, etc.)
+  const validCandidates = candidates.filter((candidate) =>
+    canMoveIntoCell(candidate, defenders, index)
+  );
 
-const pageStyle =
-  "min-h-screen flex items-center justify-center bg-slate-900 text-slate-100";
+  // If no valid candidate, stay in place
+  if (validCandidates.length === 0) return current;
 
-// Start position: row 3, col 1 (0-based)
+  // Randomly pick among the valid candidates
+  return validCandidates[randomInt(0, validCandidates.length - 1)];
+};
+
 const PLAYER_START: Position = { row: 3, col: 1 };
 
 const Page: React.FC = () => {
-  const [player, setPlayer] = useState<Position>(() => PLAYER_START);
+  const [player, setPlayer] = useState<Position>(PLAYER_START);
   const [defenders, setDefenders] = useState<Position[]>([]);
   const [status, setStatus] = useState<GameStatus>("PLAYING");
 
-  // Refs so timeouts and handlers see latest values
+  // Refs for current values used in async logic
   const playerRef = useRef<Position>(PLAYER_START);
   const statusRef = useRef<GameStatus>("PLAYING");
   const defendersTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -148,6 +171,8 @@ const Page: React.FC = () => {
   // Sound refs
   const moveSoundRef = useRef<HTMLAudioElement | null>(null);
   const touchdownSoundRef = useRef<HTMLAudioElement | null>(null);
+  const tackleSoundRef = useRef<HTMLAudioElement | null>(null);
+  const tackleSoundPlayedRef = useRef(false);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -162,8 +187,13 @@ const Page: React.FC = () => {
   useEffect(() => {
     moveSoundRef.current = new Audio("/sounds/move.wav");
     touchdownSoundRef.current = new Audio("/sounds/touchdown.wav");
+    tackleSoundRef.current = new Audio("/sounds/hitHurt.wav");
+
     if (touchdownSoundRef.current) {
-      touchdownSoundRef.current.volume = 1.0; // full volume as requested
+      touchdownSoundRef.current.volume = 1.0;
+    }
+    if (tackleSoundRef.current) {
+      tackleSoundRef.current.volume = 1.0;
     }
   }, []);
 
@@ -172,52 +202,59 @@ const Page: React.FC = () => {
     defendersTimeoutsRef.current = [];
   }, []);
 
-  // Schedule a movement timeout for a specific defender index
-  const scheduleDefenderMove = useCallback(
-    (index: number) => {
-      const delay = randomDefenderDelayMs();
+  const scheduleDefenderMove = useCallback((index: number) => {
+    const delay = randomDefenderDelayMs();
 
-      const timeoutId = setTimeout(() => {
-        if (statusRef.current !== "PLAYING") {
-          return;
-        }
+    const timeoutId = setTimeout(() => {
+      if (statusRef.current !== "PLAYING") {
+        return;
+      }
 
-        const currentPlayer = playerRef.current;
+      const currentPlayer = playerRef.current;
 
-        setDefenders((prev) => {
-          if (!prev[index]) return prev;
+      setDefenders((prev) => {
+        if (!prev[index]) return prev;
 
-          const beforeMove = [...prev];
-          const currentDef = beforeMove[index];
+        const beforeMove = [...prev];
+        const currentDef = beforeMove[index];
 
-          const nextPos = getNextDefenderPosition(
-            currentDef,
-            currentPlayer,
-            beforeMove,
-            index
-          );
+        // Compute the next position based on current player position
+        const nextPos = getNextDefenderPosition(
+          currentDef,
+          currentPlayer,
+          beforeMove,
+          index
+        );
 
-          beforeMove[index] = nextPos;
+        beforeMove[index] = nextPos;
 
-          // Check for collision with player
-          if (positionsEqual(nextPos, currentPlayer)) {
-            statusRef.current = "TACKLED";
-            setStatus("TACKLED");
-            return beforeMove;
+        // Check for collision with player
+        if (positionsEqual(nextPos, currentPlayer)) {
+          if (!tackleSoundPlayedRef.current && tackleSoundRef.current) {
+            tackleSoundPlayedRef.current = true;
+            try {
+              tackleSoundRef.current.currentTime = 0;
+              void tackleSoundRef.current.play();
+            } catch {
+              // Ignore play errors (e.g., user/browser restrictions)
+            }
           }
-
+          statusRef.current = "TACKLED";
+          setStatus("TACKLED");
           return beforeMove;
-        });
-
-        if (statusRef.current === "PLAYING") {
-          scheduleDefenderMove(index);
         }
-      }, delay);
 
-      defendersTimeoutsRef.current[index] = timeoutId;
-    },
-    [setDefenders]
-  );
+        return beforeMove;
+      });
+
+      // Re-schedule this defender's movement if game still in progress
+      if (statusRef.current === "PLAYING") {
+        scheduleDefenderMove(index);
+      }
+    }, delay);
+
+    defendersTimeoutsRef.current.push(timeoutId);
+  }, []);
 
   const initGame = useCallback(() => {
     clearDefenderTimeouts();
@@ -228,6 +265,7 @@ const Page: React.FC = () => {
 
     setStatus("PLAYING");
     statusRef.current = "PLAYING";
+    tackleSoundPlayedRef.current = false;
 
     const newDefenders = generateDefenders(startPlayer);
     setDefenders(newDefenders);
@@ -245,59 +283,68 @@ const Page: React.FC = () => {
     };
   }, [initGame, clearDefenderTimeouts]);
 
-  // Handle keyboard input
+  // Keyboard handling for player movement and restarting
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      const key = event.key;
-
-      if (key === "Enter") {
-        if (statusRef.current !== "PLAYING") {
-          event.preventDefault();
+      if (statusRef.current !== "PLAYING") {
+        if (event.key === "Enter") {
           initGame();
         }
         return;
       }
 
-      if (statusRef.current !== "PLAYING") {
-        return;
+      const { key } = event;
+      let delta: Position | null = null;
+
+      if (key === "ArrowUp") {
+        delta = { row: -1, col: 0 };
+      } else if (key === "ArrowDown") {
+        delta = { row: 1, col: 0 };
+      } else if (key === "ArrowLeft") {
+        delta = { row: 0, col: -1 };
+      } else if (key === "ArrowRight") {
+        delta = { row: 0, col: 1 };
       }
 
-      let dRow = 0;
-      let dCol = 0;
-
-      if (key === "ArrowUp") dRow = -1;
-      else if (key === "ArrowDown") dRow = 1;
-      else if (key === "ArrowLeft") dCol = -1;
-      else if (key === "ArrowRight") dCol = 1;
-      else return;
+      if (!delta) return;
 
       setPlayer((prev) => {
-        const next: Position = {
-          row: clamp(prev.row + dRow, 0, ROWS - 1),
-          col: clamp(prev.col + dCol, 0, COLS - 1),
+        const next = {
+          row: clamp(prev.row + delta!.row, 0, ROWS - 1),
+          col: clamp(prev.col + delta!.col, 0, COLS - 1),
         };
 
-        const moved =
-          next.row !== prev.row || next.col !== prev.col;
+        const moved = !positionsEqual(prev, next);
 
-        // Touchdown?
+        // Check for touchdown
         if (next.col === COLS - 1) {
           setStatus("TOUCHDOWN");
           statusRef.current = "TOUCHDOWN";
 
-          // Play touchdown sound immediately
           if (touchdownSoundRef.current) {
             try {
               touchdownSoundRef.current.currentTime = 0;
               void touchdownSoundRef.current.play();
             } catch {
-              // ignore play errors
+              // Ignore play errors (e.g., user/browser restrictions)
             }
           }
+
+          playerRef.current = next;
+          return next;
         }
 
         // Collision with defender?
         if (defenders.some((d) => positionsEqual(d, next))) {
+          if (!tackleSoundPlayedRef.current && tackleSoundRef.current) {
+            tackleSoundPlayedRef.current = true;
+            try {
+              tackleSoundRef.current.currentTime = 0;
+              void tackleSoundRef.current.play();
+            } catch {
+              // Ignore play errors
+            }
+          }
           setStatus("TACKLED");
           statusRef.current = "TACKLED";
         }
@@ -321,17 +368,25 @@ const Page: React.FC = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [defenders, initGame]);
 
+  // Build the grid representation for rendering
   const grid = useMemo(() => {
-    const g = createEmptyGrid();
+    const gridData = createEmptyGrid();
 
-    defenders.forEach((d) => {
-      g[d.row][d.col] = "DEFENDER";
+    // Place defenders
+    defenders.forEach((def) => {
+      gridData[def.row][def.col] = "DEFENDER";
     });
 
-    g[player.row][player.col] = "PLAYER";
+    // Place player (overwrites defender if in same cell, though in practice
+    // we handle the collision as TACKLED)
+    gridData[PLAYER_START.row][PLAYER_START.col] = "EMPTY";
+    gridData[player.row][player.col] = "PLAYER";
 
-    return g;
+    return gridData;
   }, [player, defenders]);
+
+  const pageStyle =
+    "min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center p-4";
 
   const statusText =
     status === "PLAYING"
@@ -347,36 +402,42 @@ const Page: React.FC = () => {
           <h1 className="text-2xl font-semibold tracking-wide mb-1">
             Simple Football
           </h1>
-          <p className="text-sm text-slate-300">{statusText}</p>
+          <p className="text-xs text-slate-300">{statusText}</p>
         </div>
 
-        <div className="bg-emerald-900 border border-emerald-500 rounded-xl p-3">
-          {grid.map((row, rIdx) => (
-            <div key={rIdx} className="flex justify-center">
-              {row.map((cell, cIdx) => {
-                const isEndZone = cIdx === COLS - 1 || cIdx === 0;
+        <div className="inline-block border-4 border-slate-600 rounded-xl overflow-hidden">
+          {/* Grid container */}
+          {grid.map((row, rowIndex) => (
+            <div key={rowIndex} className="flex">
+              {row.map((cell, colIndex) => {
+                const isEndZone = colIndex === 0 || colIndex === COLS - 1;
+                const isPlayer = cell === "PLAYER";
+                const isDefender = cell === "DEFENDER";
+
                 const baseClasses =
-                  "w-7 h-7 mx-0.5 my-0.5 flex items-center justify-center rounded-sm text-sm font-bold";
+                  "w-6 h-6 flex items-center justify-center text-xs font-bold";
+                const cellClasses = isEndZone
+                  ? "bg-blue-800"
+                  : "bg-green-800 border border-green-900";
 
-                let cellClasses = "bg-emerald-950 border border-emerald-700";
-
-                if (isEndZone) {
-                  cellClasses =
-                    "bg-blue-900 border border-blue-500"; // end zones
-                } else if (cell === "PLAYER") {
-                  cellClasses =
-                    "bg-emerald-300 text-slate-900 border border-emerald-100";
-                } else if (cell === "DEFENDER") {
-                  cellClasses =
-                    "bg-red-700 text-red-100 border border-red-300/80";
-                }
+                const contentClasses = isPlayer
+                  ? "text-green-200"
+                  : isDefender
+                  ? "text-red-300"
+                  : "text-transparent";
 
                 return (
                   <div
-                    key={cIdx}
+                    key={colIndex}
                     className={`${baseClasses} ${cellClasses}`}
                   >
-                    {cell === "PLAYER" ? "O" : cell === "DEFENDER" ? "X" : ""}
+                    <span className={contentClasses}>
+                      {cell === "PLAYER"
+                        ? "O"
+                        : cell === "DEFENDER"
+                        ? "X"
+                        : ""}
+                    </span>
                   </div>
                 );
               })}
