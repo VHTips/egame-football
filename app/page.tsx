@@ -1,5 +1,5 @@
 "use client";
-// egame-football-v.03_11_25_25_2228-cols-new-start-pos
+// egame-football-v.04_11_25_25_2328_move-sound
 
 import React, {
   useCallback,
@@ -16,7 +16,7 @@ type Position = { row: number; col: number };
 type GameStatus = "PLAYING" | "TOUCHDOWN" | "TACKLED";
 
 const ROWS = 5;
-const COLS = 12; // increased from 10 to 12
+const COLS = 12;
 const NUM_DEFENDERS = 6;
 
 // Helper to create an empty grid
@@ -132,19 +132,23 @@ function getNextDefenderPosition(
 const pageStyle =
   "min-h-screen flex items-center justify-center bg-slate-900 text-slate-100";
 
-// Updated start position per your request: row 3, col 1 (0-based)
+// Start position: row 3, col 1 (0-based)
 const PLAYER_START: Position = { row: 3, col: 1 };
 
 const Page: React.FC = () => {
   const [player, setPlayer] = useState<Position>(() => PLAYER_START);
-  const [defenders, setDefenders] = useState<Position[]>([]); // start empty for deterministic SSR
+  const [defenders, setDefenders] = useState<Position[]>([]);
   const [status, setStatus] = useState<GameStatus>("PLAYING");
 
-  // Refs so timeouts always see the latest player/status
+  // Refs so timeouts and handlers see latest values
   const playerRef = useRef<Position>(PLAYER_START);
   const statusRef = useRef<GameStatus>("PLAYING");
   const defendersTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
+  // Move sound ref
+  const moveSoundRef = useRef<HTMLAudioElement | null>(null);
+
+  // Keep refs in sync with state
   useEffect(() => {
     playerRef.current = player;
   }, [player]);
@@ -152,6 +156,13 @@ const Page: React.FC = () => {
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
+  // Initialize move sound on client
+  useEffect(() => {
+    moveSoundRef.current = new Audio("/sounds/move.wav");
+      // set volume here
+    moveSoundRef.current.volume = 0.15; // example: 25%
+  }, []);
 
   const clearDefenderTimeouts = useCallback(() => {
     defendersTimeoutsRef.current.forEach((id) => clearTimeout(id));
@@ -164,7 +175,6 @@ const Page: React.FC = () => {
       const delay = randomDefenderDelayMs();
 
       const timeoutId = setTimeout(() => {
-        // If game is no longer playing, do nothing
         if (statusRef.current !== "PLAYING") {
           return;
         }
@@ -196,7 +206,6 @@ const Page: React.FC = () => {
           return beforeMove;
         });
 
-        // After moving, if still playing, schedule the next move for this defender
         if (statusRef.current === "PLAYING") {
           scheduleDefenderMove(index);
         }
@@ -220,7 +229,6 @@ const Page: React.FC = () => {
     const newDefenders = generateDefenders(startPlayer);
     setDefenders(newDefenders);
 
-    // Schedule movement for each defender
     newDefenders.forEach((_, index) => {
       scheduleDefenderMove(index);
     });
@@ -266,6 +274,9 @@ const Page: React.FC = () => {
           col: clamp(prev.col + dCol, 0, COLS - 1),
         };
 
+        const moved =
+          next.row !== prev.row || next.col !== prev.col;
+
         // Touchdown?
         if (next.col === COLS - 1) {
           setStatus("TOUCHDOWN");
@@ -276,6 +287,16 @@ const Page: React.FC = () => {
         if (defenders.some((d) => positionsEqual(d, next))) {
           setStatus("TACKLED");
           statusRef.current = "TACKLED";
+        }
+
+        // Play move sound only if we actually moved to a new cell
+        if (moved && moveSoundRef.current) {
+          try {
+            moveSoundRef.current.currentTime = 0;
+            void moveSoundRef.current.play();
+          } catch {
+            // Ignore play errors (e.g., user/browser restrictions)
+          }
         }
 
         playerRef.current = next;
