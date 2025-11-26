@@ -1,5 +1,5 @@
 "use client";
-// egame-football-v.05_11_25_25_2353_touchdown-sound
+// egame-football-v.09_11_26_25_1626_resize reshape
 
 import React, {
   useCallback,
@@ -130,7 +130,7 @@ function getNextDefenderPosition(
 const pageStyle =
   "min-h-screen flex items-center justify-center bg-slate-900 text-slate-100";
 
-// Start position: row 3, col 1 (0-based)
+// Start position: center row (row 3 visually), col 1
 const PLAYER_START: Position = { row: 2, col: 1 };
 
 const Page: React.FC = () => {
@@ -168,7 +168,7 @@ const Page: React.FC = () => {
     touchdownSoundRef.current = new Audio("/sounds/touchdown.wav");
     tackleSoundRef.current = new Audio("/sounds/hitHurt.wav");
     if (touchdownSoundRef.current) {
-      touchdownSoundRef.current.volume = 1.0; // full volume as requested
+      touchdownSoundRef.current.volume = 1.0;
     }
     if (tackleSoundRef.current) {
       tackleSoundRef.current.volume = 1.0;
@@ -220,7 +220,7 @@ const Page: React.FC = () => {
                 tackleSoundRef.current.currentTime = 0;
                 void tackleSoundRef.current.play();
               } catch {
-                // ignore play errors (e.g., user/browser restrictions)
+                // ignore play errors
               }
             }
             statusRef.current = "TACKLED";
@@ -349,7 +349,7 @@ const Page: React.FC = () => {
             moveSoundRef.current.currentTime = 0;
             void moveSoundRef.current.play();
           } catch {
-            // Ignore play errors (e.g., user/browser restrictions)
+            // Ignore play errors
           }
         }
 
@@ -397,81 +397,76 @@ const Page: React.FC = () => {
     return base;
   }, [player, defenders]);
 
-  const statusText =
-    status === "PLAYING"
-      ? "Use arrow keys to move your O. Reach the right side. Avoid the Xs."
-      : status === "TOUCHDOWN"
-      ? "TOUCHDOWN! Press Enter to play again."
-      : "TACKLED! Press Enter to try again.";
-
   return (
     <div className={pageStyle}>
-      <div className="bg-slate-800 rounded-2xl p-6 shadow-2xl border border-slate-600">
-        <div className="mb-4 text-center">
-          <h1 className="text-2xl font-semibold tracking-wide mb-1">
-            Simple Football
-          </h1>
-          <p className="text-sm text-slate-300">{statusText}</p>
-        </div>
-
-        <div className="bg-emerald-900 border border-emerald-500 rounded-xl p-3">
+      <div className="bg-slate-800 rounded-2xl p-8 shadow-2xl border border-slate-600">
+        {/* Flat field: solid green interior, blue end zones;
+            X/O squares and flash rendered on top */}
+        <div className="inline-block bg-emerald-900 border border-emerald-700 rounded-xl p-0 overflow-hidden">
           {grid.map((row, rIdx) => (
-            <div key={rIdx} className="flex justify-center">
+            <div key={rIdx} className="flex">
               {row.map((cell, cIdx) => {
-                const isEndZone = cIdx === COLS - 1 || cIdx === 0;
-                const baseClasses =
-                  "w-7 h-7 mx-0.5 my-0.5 flex items-center justify-center rounded-sm text-sm font-bold";
+                const isEndZone = cIdx === 0 || cIdx === COLS - 1;
+                const isPlayer = cell === "PLAYER";
+                const isDefender = cell === "DEFENDER";
 
-                let cellClasses = "bg-emerald-950 border border-emerald-700";
-
-                // If this is the tackle flash cell, override colors
                 const isTackleFlashCell =
                   tackleFlashActive &&
                   tackleFlashPos &&
                   tackleFlashPos.row === rIdx &&
                   tackleFlashPos.col === cIdx;
 
+                // Outer field cell: flat green or blue, no borders, no gaps
+                const outerFieldClasses = isEndZone
+                  ? "w-10 h-10 flex items-center justify-center bg-blue-900"
+                  : "w-10 h-10 flex items-center justify-center bg-emerald-900";
+
+                // Inner square (player/defender/flash), centered in field cell
+                let innerSquare: React.ReactNode = null;
+
                 if (isTackleFlashCell) {
                   // 0: white, 1: black, 2: bright red, 3: bright blue
+                  let flashClasses = "";
                   if (tackleFlashIndex === 0) {
-                    cellClasses = "bg-white text-black border border-white";
+                    flashClasses = "bg-white text-black border border-white";
                   } else if (tackleFlashIndex === 1) {
-                    cellClasses = "bg-black text-white border border-white";
+                    flashClasses = "bg-black text-white border border-white";
                   } else if (tackleFlashIndex === 2) {
-                    cellClasses =
+                    flashClasses =
                       "bg-red-500 text-white border border-red-200";
                   } else {
-                    cellClasses =
+                    flashClasses =
                       "bg-sky-500 text-black border border-sky-200";
                   }
-                } else {
-                  if (isEndZone) {
-                    cellClasses =
-                      "bg-blue-900 border border-blue-500"; // end zones
-                  } else if (cell === "PLAYER") {
-                    cellClasses =
-                      "bg-emerald-300 text-slate-900 border border-emerald-100";
-                  } else if (cell === "DEFENDER") {
-                    cellClasses =
-                      "bg-red-700 text-red-100 border border-red-300/80";
-                  }
+                  innerSquare = (
+                    <div
+                      className={`w-9 h-9 rounded-sm flex items-center justify-center text-sm font-bold ${flashClasses}`}
+                    >
+                      {isPlayer ? "O" : isDefender ? "X" : ""}
+                    </div>
+                  );
+                } else if (isPlayer) {
+                  innerSquare = (
+                    <div className="w-9 h-9 rounded-sm flex items-center justify-center text-sm font-bold bg-emerald-300 text-slate-900 border border-emerald-100">
+                      O
+                    </div>
+                  );
+                } else if (isDefender) {
+                  innerSquare = (
+                    <div className="w-9 h-9 rounded-sm flex items-center justify-center text-sm font-bold bg-red-700 text-red-100 border border-red-300/80">
+                      X
+                    </div>
+                  );
                 }
 
                 return (
-                  <div
-                    key={cIdx}
-                    className={`${baseClasses} ${cellClasses}`}
-                  >
-                    {cell === "PLAYER" ? "O" : cell === "DEFENDER" ? "X" : ""}
+                  <div key={cIdx} className={outerFieldClasses}>
+                    {innerSquare}
                   </div>
                 );
               })}
             </div>
           ))}
-        </div>
-
-        <div className="mt-3 text-xs text-center text-slate-400">
-          Status: {status}
         </div>
       </div>
     </div>
