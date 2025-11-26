@@ -131,12 +131,17 @@ const pageStyle =
   "min-h-screen flex items-center justify-center bg-slate-900 text-slate-100";
 
 // Start position: row 3, col 1 (0-based)
-const PLAYER_START: Position = { row: 2, col: 1 };
+const PLAYER_START: Position = { row: 3, col: 1 };
 
 const Page: React.FC = () => {
   const [player, setPlayer] = useState<Position>(() => PLAYER_START);
   const [defenders, setDefenders] = useState<Position[]>([]);
   const [status, setStatus] = useState<GameStatus>("PLAYING");
+
+  // Tackle flash state
+  const [tackleFlashPos, setTackleFlashPos] = useState<Position | null>(null);
+  const [tackleFlashActive, setTackleFlashActive] = useState(false);
+  const [tackleFlashIndex, setTackleFlashIndex] = useState(0);
 
   // Refs so timeouts and handlers see latest values
   const playerRef = useRef<Position>(PLAYER_START);
@@ -204,6 +209,11 @@ const Page: React.FC = () => {
 
           // Check for collision with player
           if (positionsEqual(nextPos, currentPlayer)) {
+            // Start tackle flash
+            setTackleFlashPos(nextPos);
+            setTackleFlashActive(true);
+            setTackleFlashIndex(0);
+
             if (!tackleSoundPlayedRef.current && tackleSoundRef.current) {
               tackleSoundPlayedRef.current = true;
               try {
@@ -241,6 +251,11 @@ const Page: React.FC = () => {
     setStatus("PLAYING");
     statusRef.current = "PLAYING";
     tackleSoundPlayedRef.current = false;
+
+    // reset tackle flash
+    setTackleFlashActive(false);
+    setTackleFlashPos(null);
+    setTackleFlashIndex(0);
 
     const newDefenders = generateDefenders(startPlayer);
     setDefenders(newDefenders);
@@ -310,6 +325,11 @@ const Page: React.FC = () => {
 
         // Collision with defender?
         if (defenders.some((d) => positionsEqual(d, next))) {
+          // Start tackle flash
+          setTackleFlashPos(next);
+          setTackleFlashActive(true);
+          setTackleFlashIndex(0);
+
           if (!tackleSoundPlayedRef.current && tackleSoundRef.current) {
             tackleSoundPlayedRef.current = true;
             try {
@@ -341,6 +361,29 @@ const Page: React.FC = () => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [defenders, initGame]);
+
+  // Tackle flash effect (2 seconds, 125ms per color step)
+  useEffect(() => {
+    if (!tackleFlashActive || !tackleFlashPos) {
+      return;
+    }
+
+    const startTime = Date.now();
+
+    const intervalId = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      if (elapsed >= 2000) {
+        setTackleFlashActive(false);
+        setTackleFlashPos(null);
+        setTackleFlashIndex(0);
+        clearInterval(intervalId);
+        return;
+      }
+      setTackleFlashIndex((prev) => (prev + 1) % 4);
+    }, 125);
+
+    return () => clearInterval(intervalId);
+  }, [tackleFlashActive, tackleFlashPos]);
 
   // Build the grid representation for rendering
   const grid = useMemo(() => {
@@ -381,15 +424,37 @@ const Page: React.FC = () => {
 
                 let cellClasses = "bg-emerald-950 border border-emerald-700";
 
-                if (isEndZone) {
-                  cellClasses =
-                    "bg-blue-900 border border-blue-500"; // end zones
-                } else if (cell === "PLAYER") {
-                  cellClasses =
-                    "bg-emerald-300 text-slate-900 border border-emerald-100";
-                } else if (cell === "DEFENDER") {
-                  cellClasses =
-                    "bg-red-700 text-red-100 border border-red-300/80";
+                // If this is the tackle flash cell, override colors
+                const isTackleFlashCell =
+                  tackleFlashActive &&
+                  tackleFlashPos &&
+                  tackleFlashPos.row === rIdx &&
+                  tackleFlashPos.col === cIdx;
+
+                if (isTackleFlashCell) {
+                  // 0: white, 1: black, 2: bright red, 3: bright blue
+                  if (tackleFlashIndex === 0) {
+                    cellClasses = "bg-white text-black border border-white";
+                  } else if (tackleFlashIndex === 1) {
+                    cellClasses = "bg-black text-white border border-white";
+                  } else if (tackleFlashIndex === 2) {
+                    cellClasses =
+                      "bg-red-500 text-white border border-red-200";
+                  } else {
+                    cellClasses =
+                      "bg-sky-500 text-black border border-sky-200";
+                  }
+                } else {
+                  if (isEndZone) {
+                    cellClasses =
+                      "bg-blue-900 border border-blue-500"; // end zones
+                  } else if (cell === "PLAYER") {
+                    cellClasses =
+                      "bg-emerald-300 text-slate-900 border border-emerald-100";
+                  } else if (cell === "DEFENDER") {
+                    cellClasses =
+                      "bg-red-700 text-red-100 border border-red-300/80";
+                  }
                 }
 
                 return (
