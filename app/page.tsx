@@ -376,8 +376,8 @@ const Page: React.FC = () => {
                       );
                     } else if (isPlayer) {
                       innerSquare = (
-                        <div className="w-9 h-9 rounded-sm flex items-center justify-center text-sm font-bold bg-emerald-300 text-slate-900 border border-emerald-100">
-                          O
+                        <div className="w-9 h-9 rounded-sm flex items-center justify-center text-sm font-bold bg-white text-slate-900 border border-emerald-100">
+                          34
                         </div>
                       );
                     } else if (isDefender) {
